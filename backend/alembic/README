@@ -1,0 +1,14 @@
+Generic single-database configuration.
+
+Day-to-day commands (run from `backend/`):
+
+  # generate a new revision after editing models.py
+  alembic revision --autogenerate -m "describe change"
+
+  # apply latest revisions to the database
+  alembic upgrade head
+
+  # roll back one revision
+  alembic downgrade -1
+
+The Postgres URL is taken from ``DATABASE_URL`` (env) or ``app.config.settings``.
