@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "rgName": { "value": "rg-sjplanner-prod" },
+    "location": { "value": "southeastasia" },
+    "pgAdmin": { "value": "sjplanner" },
+    "pgPassword": { "value": "<set-via-env-or-keyvault>" },
+    "backendImage": { "value": "ghcr.io/your-org/sjplanner-api:1.0.0" }
+  }
+}
