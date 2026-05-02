@@ -1,0 +1,96 @@
+{
+  "name": "SJ Project Planner",
+  "description": "Power BI tabular model for the SJ Project Planner Agent. Connects to the Postgres v_* views (see views.sql). Includes core PMO measures: WIP, overdue %, schedule slip days, draft cycle time, clarification SLA.",
+  "compatibilityLevel": 1567,
+  "model": {
+    "culture": "en-US",
+    "dataSources": [
+      {
+        "name": "PostgreSQL/SJPlanner",
+        "type": "structured",
+        "connectionDetails": {
+          "protocol": "postgresql",
+          "address": { "server": "<replace>.postgres.database.azure.com", "database": "sj_planner" }
+        },
+        "credential": { "AuthenticationKind": "UsernamePassword" }
+      }
+    ],
+    "tables": [
+      {
+        "name": "Tasks",
+        "source": { "type": "m", "expression": "let s = PostgreSQL.Database(\"<replace>\", \"sj_planner\"), t = s{[Schema=\"public\",Item=\"v_tasks\"]}[Data] in t" },
+        "columns": [
+          { "name": "task_id", "dataType": "int64" },
+          { "name": "task_code", "dataType": "string" },
+          { "name": "org_id", "dataType": "int64" },
+          { "name": "project_id", "dataType": "int64" },
+          { "name": "project_name", "dataType": "string" },
+          { "name": "title", "dataType": "string" },
+          { "name": "owner", "dataType": "string" },
+          { "name": "status", "dataType": "string" },
+          { "name": "priority", "dataType": "string" },
+          { "name": "start_date", "dataType": "dateTime" },
+          { "name": "due_date", "dataType": "dateTime" },
+          { "name": "progress", "dataType": "double" },
+          { "name": "is_overdue", "dataType": "int64" },
+          { "name": "is_due_within_7d", "dataType": "int64" }
+        ]
+      },
+      {
+        "name": "Variance",
+        "source": { "type": "m", "expression": "let s = PostgreSQL.Database(\"<replace>\", \"sj_planner\"), t = s{[Schema=\"public\",Item=\"v_schedule_variance\"]}[Data] in t" }
+      },
+      {
+        "name": "Drafts",
+        "source": { "type": "m", "expression": "let s = PostgreSQL.Database(\"<replace>\", \"sj_planner\"), t = s{[Schema=\"public\",Item=\"v_drafts\"]}[Data] in t" }
+      },
+      {
+        "name": "ChangeLog",
+        "source": { "type": "m", "expression": "let s = PostgreSQL.Database(\"<replace>\", \"sj_planner\"), t = s{[Schema=\"public\",Item=\"v_change_log\"]}[Data] in t" }
+      },
+      {
+        "name": "Clarifications",
+        "source": { "type": "m", "expression": "let s = PostgreSQL.Database(\"<replace>\", \"sj_planner\"), t = s{[Schema=\"public\",Item=\"v_clarifications\"]}[Data] in t" }
+      },
+      {
+        "name": "Notes",
+        "source": { "type": "m", "expression": "let s = PostgreSQL.Database(\"<replace>\", \"sj_planner\"), t = s{[Schema=\"public\",Item=\"v_notes\"]}[Data] in t" }
+      }
+    ],
+    "measures": [
+      { "table": "Tasks", "name": "Total Tasks",        "expression": "COUNTROWS('Tasks')" },
+      { "table": "Tasks", "name": "Done %",             "expression": "DIVIDE( CALCULATE(COUNTROWS('Tasks'), 'Tasks'[status]=\"done\"), COUNTROWS('Tasks') )", "formatString": "0.0%" },
+      { "table": "Tasks", "name": "WIP",                "expression": "CALCULATE(COUNTROWS('Tasks'), 'Tasks'[status]=\"in_progress\")" },
+      { "table": "Tasks", "name": "Blocked",            "expression": "CALCULATE(COUNTROWS('Tasks'), 'Tasks'[status]=\"blocked\")" },
+      { "table": "Tasks", "name": "Overdue %",          "expression": "DIVIDE( SUM('Tasks'[is_overdue]), COUNTROWS('Tasks') )", "formatString": "0.0%" },
+      { "table": "Tasks", "name": "Due Next 7 Days",    "expression": "SUM('Tasks'[is_due_within_7d])" },
+      { "table": "Variance", "name": "Avg Slip Days",   "expression": "AVERAGE('Variance'[days_slip])", "formatString": "0.0" },
+      { "table": "Variance", "name": "Tasks Shifted",   "expression": "CALCULATE(COUNTROWS('Variance'), 'Variance'[variance_type]=\"shifted\")" },
+      { "table": "Drafts", "name": "Draft Cycle Hours", "expression": "AVERAGE('Drafts'[hours_to_decision])", "formatString": "0.0" },
+      { "table": "Drafts", "name": "Pending Drafts",    "expression": "CALCULATE(COUNTROWS('Drafts'), 'Drafts'[status]=\"pending\")" },
+      { "table": "Drafts", "name": "Acceptance Rate",   "expression": "DIVIDE( SUM('Drafts'[accepted_count]), SUM('Drafts'[item_count]) )", "formatString": "0.0%" },
+      { "table": "Clarifications", "name": "Open Clarifications", "expression": "CALCULATE(COUNTROWS('Clarifications'), 'Clarifications'[status]=\"open\")" },
+      { "table": "Clarifications", "name": "Avg Answer Hours",    "expression": "AVERAGE('Clarifications'[hours_to_answer])", "formatString": "0.0" }
+    ],
+    "relationships": [
+      { "name": "Tasks_to_Variance",         "fromTable": "Tasks",          "fromColumn": "task_code",  "toTable": "Variance",       "toColumn": "task_code",  "crossFilteringBehavior": "bothDirections" },
+      { "name": "Tasks_to_ChangeLog",        "fromTable": "Tasks",          "fromColumn": "task_code",  "toTable": "ChangeLog",      "toColumn": "task_code" },
+      { "name": "Notes_to_Drafts",           "fromTable": "Notes",          "fromColumn": "note_id",    "toTable": "Drafts",         "toColumn": "note_id" }
+    ],
+    "roles": [
+      {
+        "name": "Org Member",
+        "description": "Row-level security: limits every query to rows where org_id matches the value supplied in USERPRINCIPALNAME() lookup.",
+        "modelPermission": "read",
+        "tablePermissions": [
+          { "name": "Tasks",          "filterExpression": "[org_id] = LOOKUPVALUE(UserOrgMap[org_id], UserOrgMap[upn], USERPRINCIPALNAME())" },
+          { "name": "Variance",       "filterExpression": "[org_id] = LOOKUPVALUE(UserOrgMap[org_id], UserOrgMap[upn], USERPRINCIPALNAME())" },
+          { "name": "Drafts",         "filterExpression": "[org_id] = LOOKUPVALUE(UserOrgMap[org_id], UserOrgMap[upn], USERPRINCIPALNAME())" },
+          { "name": "ChangeLog",      "filterExpression": "[org_id] = LOOKUPVALUE(UserOrgMap[org_id], UserOrgMap[upn], USERPRINCIPALNAME())" },
+          { "name": "Clarifications", "filterExpression": "[org_id] = LOOKUPVALUE(UserOrgMap[org_id], UserOrgMap[upn], USERPRINCIPALNAME())" },
+          { "name": "Notes",          "filterExpression": "[org_id] = LOOKUPVALUE(UserOrgMap[org_id], UserOrgMap[upn], USERPRINCIPALNAME())" }
+        ]
+      }
+    ]
+  }
+}
