@@ -1,0 +1,81 @@
+%% SJ Project Planner Agent — Solution Architecture
+%% Render with: https://mermaid.live  (paste this whole file)
+%% Or: npx -p @mermaid-js/mermaid-cli mmdc -i infra/architecture.mmd -o architecture.png -w 1920
+flowchart LR
+    %% ===== Users =====
+    PM[PM / Delivery Lead]:::user
+    EXEC[Executives / Reviewers]:::user
+
+    %% ===== Frontend =====
+    subgraph FE["React SPA (Vite + Tailwind)"]
+        UI[Dashboard · Tasks · Gantt · Drafts · Changes · Clarifications]:::ui
+    end
+
+    %% ===== Backend / Agents =====
+    subgraph API["FastAPI Backend  ·  Azure Container Apps"]
+        AUTH[Auth · JWT + Microsoft Entra ID]:::svc
+        ORCH(((Planner Orchestrator<br/>Microsoft Agent Framework pattern))):::orch
+        EX[Extraction Agent]:::agent
+        REC[Reconciliation Agent<br/>HIGH=0.72  LOW=0.45]:::agent
+        CL[Clarification Agent]:::agent
+        CD[Change Detection Agent]:::agent
+        PR[Priority Agent]:::agent
+        AS[Assignment Agent]:::agent
+    end
+
+    %% ===== Azure platform =====
+    subgraph AZ["Microsoft Azure"]
+        AOAI[(Azure OpenAI / Foundry<br/>gpt-4o-mini)]:::azai
+        SEARCH[(Azure AI Search<br/>note retrieval)]:::azai
+        PG[(Azure DB for PostgreSQL<br/>Flexible Server)]:::data
+        BLOB[(Azure Blob Storage<br/>note attachments)]:::data
+        COSMOS[(Azure Cosmos DB<br/>audit event mirror)]:::data
+        APPI[(Application Insights<br/>OpenTelemetry)]:::ops
+        ENTRA[(Microsoft Entra ID)]:::ops
+        KV[(Key Vault)]:::ops
+    end
+
+    %% ===== External Microsoft 365 =====
+    subgraph M365["Microsoft 365"]
+        PA[Power Automate<br/>Teams notifications &<br/>clarification reminders]:::ext
+        PBI[Power BI<br/>tactical Gantt &<br/>variance dashboards]:::ext
+    end
+
+    %% ===== Flows =====
+    PM -->|login| UI
+    EXEC -->|view dashboards| PBI
+    UI -->|HTTPS / JSON| AUTH
+    AUTH -->|verify| ENTRA
+    UI -->|paste note · upload .eml/.docx| ORCH
+    UI -->|approve / reject| ORCH
+
+    ORCH --> EX --> REC --> CL
+    ORCH --> CD
+    ORCH --> PR
+    ORCH --> AS
+
+    EX -.LLM call w/ PII redaction.-> AOAI
+    REC -.optional semantic match.-> AOAI
+    CL -.optional rephrase.-> AOAI
+    EX -.future: hybrid search.-> SEARCH
+
+    ORCH -->|persist tasks · drafts · change log| PG
+    UI -->|upload attachments| BLOB
+    ORCH -->|emit event| COSMOS
+    ORCH -->|webhook draft.created / approved| PA
+    PA -->|Teams card · email reminder| PM
+
+    PG --> PBI
+    API --> APPI
+    KV -. secrets .- API
+
+    %% ===== Styles =====
+    classDef user fill:#1f6feb,stroke:#0b3a8c,color:#fff,stroke-width:1px
+    classDef ui fill:#0ea5e9,stroke:#075985,color:#fff
+    classDef svc fill:#334155,stroke:#0f172a,color:#fff
+    classDef orch fill:#7c3aed,stroke:#3b0764,color:#fff
+    classDef agent fill:#a855f7,stroke:#4c1d95,color:#fff
+    classDef azai fill:#0078d4,stroke:#003e7c,color:#fff
+    classDef data fill:#0f766e,stroke:#064e3b,color:#fff
+    classDef ops fill:#475569,stroke:#0f172a,color:#fff
+    classDef ext fill:#b45309,stroke:#7c2d12,color:#fff
