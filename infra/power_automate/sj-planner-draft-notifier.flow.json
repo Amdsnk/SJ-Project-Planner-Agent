@@ -1,0 +1,120 @@
+{
+  "name": "SJ Planner — Draft Notifier",
+  "description": "Receives signed webhooks from the SJ Project Planner Agent (events: draft.created, draft.approved) and posts a rich Adaptive Card to a Microsoft Teams channel. Designed for one-click import into Power Automate (Flow definition v1).",
+  "kind": "Stateful",
+  "properties": {
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": {
+          "type": "Object",
+          "defaultValue": {}
+        },
+        "TeamsTeamId": {
+          "type": "String",
+          "defaultValue": "<<replace-with-teams-team-id>>"
+        },
+        "TeamsChannelId": {
+          "type": "String",
+          "defaultValue": "<<replace-with-teams-channel-id>>"
+        },
+        "PlannerBaseUrl": {
+          "type": "String",
+          "defaultValue": "https://sj-planner.example.com"
+        }
+      },
+      "triggers": {
+        "When_a_HTTP_request_is_received": {
+          "type": "Request",
+          "kind": "Http",
+          "inputs": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "event": { "type": "string" },
+                "project_id": { "type": "integer" },
+                "draft_id": { "type": "integer" },
+                "items": { "type": "integer" },
+                "summary": { "type": "string" },
+                "decided_by": { "type": "string" },
+                "accepted": { "type": "integer" },
+                "rejected": { "type": "integer" },
+                "source_note_id": { "type": "integer" }
+              },
+              "required": ["project_id", "draft_id"]
+            }
+          }
+        }
+      },
+      "actions": {
+        "Compose_event_label": {
+          "type": "Compose",
+          "inputs": "@coalesce(triggerBody()?['event'], 'draft.created')"
+        },
+        "Switch_on_event": {
+          "type": "Switch",
+          "expression": "@outputs('Compose_event_label')",
+          "runAfter": { "Compose_event_label": ["Succeeded"] },
+          "cases": {
+            "DraftCreated": {
+              "case": "draft.created",
+              "actions": {
+                "Post_card_for_new_draft": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "connectionName": "shared_teams",
+                      "operationId": "PostCardToChannelV3",
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams"
+                    },
+                    "parameters": {
+                      "poster": "Flow bot",
+                      "location": "Channel",
+                      "body/recipient/groupId": "@parameters('TeamsTeamId')",
+                      "body/recipient/channelId": "@parameters('TeamsChannelId')",
+                      "body/messageBody": "{\n  \"type\": \"AdaptiveCard\",\n  \"$schema\": \"http://adaptivecards.io/schemas/adaptive-card.json\",\n  \"version\": \"1.4\",\n  \"body\": [\n    { \"type\": \"TextBlock\", \"size\": \"Large\", \"weight\": \"Bolder\", \"text\": \"\ud83d\udcdd New plan-update draft pending review\" },\n    { \"type\": \"FactSet\", \"facts\": [\n      { \"title\": \"Project\", \"value\": \"@{triggerBody()?['project_id']}\" },\n      { \"title\": \"Draft\", \"value\": \"#@{triggerBody()?['draft_id']}\" },\n      { \"title\": \"Items\", \"value\": \"@{triggerBody()?['items']}\" },\n      { \"title\": \"Summary\", \"value\": \"@{triggerBody()?['summary']}\" }\n    ]}\n  ],\n  \"actions\": [\n    { \"type\": \"Action.OpenUrl\", \"title\": \"Review draft\", \"url\": \"@{parameters('PlannerBaseUrl')}/projects/@{triggerBody()?['project_id']}/drafts/@{triggerBody()?['draft_id']}\" }\n  ]\n}"
+                    }
+                  }
+                }
+              }
+            },
+            "DraftApproved": {
+              "case": "draft.approved",
+              "actions": {
+                "Post_card_for_approved_draft": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "host": {
+                      "connectionName": "shared_teams",
+                      "operationId": "PostCardToChannelV3",
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams"
+                    },
+                    "parameters": {
+                      "poster": "Flow bot",
+                      "location": "Channel",
+                      "body/recipient/groupId": "@parameters('TeamsTeamId')",
+                      "body/recipient/channelId": "@parameters('TeamsChannelId')",
+                      "body/messageBody": "{\n  \"type\": \"AdaptiveCard\",\n  \"$schema\": \"http://adaptivecards.io/schemas/adaptive-card.json\",\n  \"version\": \"1.4\",\n  \"body\": [\n    { \"type\": \"TextBlock\", \"size\": \"Large\", \"weight\": \"Bolder\", \"color\": \"Good\", \"text\": \"\u2705 Plan update applied\" },\n    { \"type\": \"FactSet\", \"facts\": [\n      { \"title\": \"Project\", \"value\": \"@{triggerBody()?['project_id']}\" },\n      { \"title\": \"Draft\", \"value\": \"#@{triggerBody()?['draft_id']}\" },\n      { \"title\": \"Approved by\", \"value\": \"@{triggerBody()?['decided_by']}\" },\n      { \"title\": \"Accepted / Rejected\", \"value\": \"@{triggerBody()?['accepted']} / @{triggerBody()?['rejected']}\" }\n    ]}\n  ],\n  \"actions\": [\n    { \"type\": \"Action.OpenUrl\", \"title\": \"Open Gantt\", \"url\": \"@{parameters('PlannerBaseUrl')}/projects/@{triggerBody()?['project_id']}/gantt\" },\n    { \"type\": \"Action.OpenUrl\", \"title\": \"View change-log\", \"url\": \"@{parameters('PlannerBaseUrl')}/projects/@{triggerBody()?['project_id']}/changes\" }\n  ]\n}"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": { "actions": {} }
+        },
+        "Respond_OK": {
+          "type": "Response",
+          "kind": "Http",
+          "runAfter": { "Switch_on_event": ["Succeeded", "Skipped"] },
+          "inputs": {
+            "statusCode": 200,
+            "body": { "ok": true }
+          }
+        }
+      },
+      "outputs": {}
+    }
+  }
+}
