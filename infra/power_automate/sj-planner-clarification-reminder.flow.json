@@ -1,0 +1,57 @@
+{
+  "name": "SJ Planner — Clarification Reminder",
+  "description": "Scheduled (recurrence) flow that polls /api/projects/{id}/clarifications?status=open and DMs each owner with their unanswered agent questions older than 24h. Pair with the API's bearer token (service principal) stored as a Power Automate secured input.",
+  "kind": "Stateful",
+  "properties": {
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": { "type": "Object", "defaultValue": {} },
+        "PlannerBaseUrl": { "type": "String", "defaultValue": "https://sj-planner.example.com" },
+        "PlannerProjectId": { "type": "Int", "defaultValue": 1 },
+        "PlannerBearerToken": { "type": "SecureString", "defaultValue": "" }
+      },
+      "triggers": {
+        "Recurrence_every_morning": {
+          "type": "Recurrence",
+          "recurrence": { "frequency": "Day", "interval": 1, "schedule": { "hours": ["8"], "minutes": [0] }, "timeZone": "Singapore Standard Time" }
+        }
+      },
+      "actions": {
+        "List_open_clarifications": {
+          "type": "Http",
+          "inputs": {
+            "method": "GET",
+            "uri": "@{parameters('PlannerBaseUrl')}/api/projects/@{parameters('PlannerProjectId')}/clarifications?status=open",
+            "headers": { "Authorization": "Bearer @{parameters('PlannerBearerToken')}" }
+          }
+        },
+        "For_each_clarification": {
+          "type": "Foreach",
+          "foreach": "@body('List_open_clarifications')",
+          "runAfter": { "List_open_clarifications": ["Succeeded"] },
+          "actions": {
+            "Post_chat_message": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "host": {
+                  "connectionName": "shared_teams",
+                  "operationId": "PostMessageToChat",
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams"
+                },
+                "parameters": {
+                  "poster": "Flow bot",
+                  "location": "Group chat",
+                  "body/recipient": "[email protected]",
+                  "body/messageBody": "<p><b>SJ Planner</b> needs clarification:</p><blockquote>@{items('For_each_clarification')?['question']}</blockquote><p>Context: @{items('For_each_clarification')?['context']}</p><p><a href=\"@{parameters('PlannerBaseUrl')}/projects/@{parameters('PlannerProjectId')}/clarifications/@{items('For_each_clarification')?['id']}\">Answer in SJ Planner</a></p>"
+                }
+              }
+            }
+          }
+        }
+      },
+      "outputs": {}
+    }
+  }
+}
