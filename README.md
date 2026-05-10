@@ -39,6 +39,9 @@ review.
 
 ## 🏗 Architecture
 
+See [Solution Architecture (PDF)](docs/SJ_Architecture.pdf) for the full
+component diagram, 7-agent pipeline, API design, and security overview.
+
 ![architecture](docs/architecture.png)
 
 > Render: open [`infra/architecture.mmd`](infra/architecture.mmd) at
